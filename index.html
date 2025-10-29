@@ -34,18 +34,31 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     
-    <!-- Service Worker Registration -->
+    <!-- Service Worker Registration (disable on localhost) -->
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((registration) => {
-              console.log('SW registrado com sucesso: ', registration);
-            })
-            .catch((registrationError) => {
-              console.log('Falha no registro do SW: ', registrationError);
-            });
-        });
+        const isLocalhost = [
+          'localhost',
+          '127.0.0.1',
+          '::1'
+        ].includes(location.hostname)
+
+        if (!isLocalhost) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+              .then((registration) => {
+                console.log('SW registrado com sucesso: ', registration);
+              })
+              .catch((registrationError) => {
+                console.log('Falha no registro do SW: ', registrationError);
+              });
+          });
+        } else {
+          // Em desenvolvimento, remova SW previamente registrado para evitar cache agressivo
+          navigator.serviceWorker.getRegistrations?.().then(registrations => {
+            registrations.forEach(r => r.unregister());
+          });
+        }
       }
     </script>
   </body>

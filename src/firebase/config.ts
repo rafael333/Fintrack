@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
-import { getAnalytics } from 'firebase/analytics';
+// Import dinâmico do Analytics somente em produção
 
 // Configuração do Firebase
 const firebaseConfig = {
@@ -31,14 +31,22 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
-// Analytics apenas em produção
+// Analytics apenas em produção, com import dinâmico e checagens de ambiente
 let analytics;
-if (import.meta.env.VITE_ENVIRONMENT === 'production') {
-  try {
-    analytics = getAnalytics(app);
-  } catch (error) {
-    console.warn('⚠️ Analytics não pôde ser inicializado:', error);
-  }
+const isProd = (import.meta.env.PROD || import.meta.env.VITE_ENVIRONMENT === 'production');
+const hasMeasurement = Boolean(firebaseConfig.measurementId);
+const isSecureContext = (typeof window !== 'undefined' && (window.isSecureContext || location.protocol === 'https:'));
+
+if (isProd && hasMeasurement && isSecureContext) {
+  import('firebase/analytics')
+    .then(({ getAnalytics }) => {
+      try {
+        analytics = getAnalytics(app);
+      } catch (error) {
+        console.warn('⚠️ Analytics não pôde ser inicializado:', error);
+      }
+    })
+    .catch((e) => console.warn('⚠️ Falha ao carregar módulo de analytics:', e));
 }
 
 export { analytics };

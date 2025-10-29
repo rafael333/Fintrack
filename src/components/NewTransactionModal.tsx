@@ -179,7 +179,9 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
       // Notificar que está criando transação
       onTransactionCreating?.(true)
       
-      const baseAmount = parseFloat(formData.amount.replace(',', '.'))
+      // Normalizar string monetária pt-BR (remove milhares e troca vírgula por ponto)
+      const normalizeAmount = (s: string) => Number(s.replace(/\./g, '').replace(',', '.'))
+      const baseAmount = normalizeAmount(formData.amount)
       const installmentAmount = Math.round((baseAmount / (formData.installments || 1)) * 100) / 100
       
       // Garantir que temos uma data válida
@@ -571,7 +573,9 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                               Valor por parcela
                             </label>
                             <div className="px-2 py-1 bg-white border border-gray-300 rounded-md text-sm font-semibold text-green-600">
-                              R$ {formData.amount ? (Math.round((parseFloat(formData.amount.replace(',', '.')) / (formData.installments || 1)) * 100) / 100).toFixed(2) : '0,00'}
+                              R$ {formData.amount ? (
+                                Math.round((Number(formData.amount.replace(/\./g, '').replace(',', '.')) / (formData.installments || 1)) * 100) / 100
+                              ).toFixed(2) : '0,00'}
                             </div>
                           </div>
                         </div>
@@ -890,7 +894,9 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                   {isInstallment && formData.installments > 1 && (
                     <div className="mt-3 p-2 lg:p-3 bg-blue-50 rounded-lg border border-blue-200">
                       <div className="text-xs text-blue-700 font-medium mb-2">
-                        {formData.installments}x de R$ {formData.amount ? (Math.round((parseFloat(formData.amount.replace(',', '.')) / formData.installments) * 100) / 100).toFixed(2) : '0.00'}
+                        {formData.installments}x de R$ {formData.amount ? (
+                          Math.round((Number(formData.amount.replace(/\./g, '').replace(',', '.')) / formData.installments) * 100) / 100
+                        ).toFixed(2) : '0.00'}
                       </div>
                       <div className="text-xs text-blue-600">
                         <div className="font-semibold mb-1">Datas das parcelas:</div>
