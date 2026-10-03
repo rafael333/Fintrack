@@ -7,7 +7,7 @@ import Transactions from './components/Transactions'
 import Budgets from './components/Budgets'
 import Budget from './components/Budget'
 import InstallmentAccounts from './components/InstallmentAccounts'
-import PaidAccountsButton from './components/PaidAccountsButton'
+import DashboardActivity from './components/DashboardActivity'
 import Settings from './components/Settings'
 import Login from './components/Login'
 import AdminSettings from './components/AdminSettings'
@@ -48,25 +48,19 @@ function AppContent() {
       case 'budgets':
         return <Budgets />
       case 'settings':
-        return <Settings />
+        return <Settings onOpenAdmin={() => setActiveTab('admin')} />
       case 'admin':
-        return <AdminSettings />
+        return <AdminSettings onBack={() => setActiveTab('settings')} />
       default:
         return (
           <>
             <SummaryCards />
+            <DashboardActivity />
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 lg:gap-6">
               <ExpenseChart />
               <FinancialEvolution selectedMonth={new Date().getMonth()} selectedYear={new Date().getFullYear()} />
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-6">
-              <div className="bg-white p-3 lg:p-6 rounded-lg shadow border">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3 lg:mb-4 space-y-2 sm:space-y-0">
-                  <h3 className="text-sm lg:text-lg font-semibold text-gray-900">Atividades Recentes</h3>
-                  <PaidAccountsButton onClick={() => {}} />
-                </div>
-                <p className="text-xs lg:text-base text-gray-600">Lista de atividades recentes será exibida aqui.</p>
-              </div>
+            <div className="grid grid-cols-1 gap-3 lg:gap-6">
               <InstallmentAccounts />
             </div>
           </>

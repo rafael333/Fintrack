@@ -9,6 +9,7 @@ import { sumAmounts } from '../utils/money'
 
 interface SummaryData {
   currentBalance: number
+  plannedBalance: number
   currentMonthRevenue: number
   currentMonthExpense: number
   previousMonthRevenue: number
@@ -90,6 +91,10 @@ const SummaryCards = () => {
       sumAmounts(transactions.filter(t => t.type === 'receita' && t.isPaid).map(t => t.amount)),
       -sumAmounts(transactions.filter(t => t.type === 'despesa' && t.isPaid).map(t => t.amount))
     ])
+    const plannedBalance = sumAmounts([
+      sumAmounts(transactions.filter(t => t.type === 'receita').map(t => t.amount)),
+      -sumAmounts(transactions.filter(t => t.type === 'despesa').map(t => t.amount))
+    ])
 
     // Calcular percentuais de variação
     const revenuePercentage = previousRevenue > 0
@@ -109,6 +114,7 @@ const SummaryCards = () => {
 
     return {
       currentBalance,
+      plannedBalance,
       currentMonthRevenue: currentRevenue,
       currentMonthExpense: currentExpense,
       previousMonthRevenue: previousRevenue,
@@ -124,6 +130,7 @@ const SummaryCards = () => {
     if (transactions.length === 0) {
       return {
         currentBalance: 0,
+        plannedBalance: 0,
         currentMonthRevenue: 0,
         currentMonthExpense: 0,
         previousMonthRevenue: 0,
@@ -144,6 +151,7 @@ const SummaryCards = () => {
       currency: 'BRL'
     }).format(value)
   }
+  const monthLabel = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date())
 
   // Função para formatar percentuais
   const formatPercentage = (value: number): string => {
@@ -194,7 +202,7 @@ const SummaryCards = () => {
         {/* Saldo Atual - Card principal com contraste reduzido */}
         <div className="bg-white p-4 rounded-xl shadow-lg border-2 border-gray-200">
           <div className="text-center">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Saldo Atual</h3>
+            <h3 className="text-sm font-medium text-gray-600 mb-2">Saldo realizado</h3>
             <div className="relative flex items-center justify-center">
               <p className={`text-3xl font-black ${
                 summaryData.currentBalance >= 0 ? 'text-green-700' : 'text-red-700'
@@ -230,6 +238,8 @@ const SummaryCards = () => {
                 </div>
               )}
             </div>
+            <p className="mt-2 text-sm text-gray-600">Saldo previsto: <strong>{formatCurrency(summaryData.plannedBalance)}</strong></p>
+            <p className="text-xs text-gray-500">Realizado considera apenas lançamentos pagos ou recebidos.</p>
           </div>
         </div>
         
@@ -238,7 +248,8 @@ const SummaryCards = () => {
           {/* Receitas - Fundo branco */}
           <div className="bg-white p-3 rounded-xl shadow border border-gray-200 flex-1">
             <div className="text-center mb-2">
-              <h3 className="text-xs font-medium text-green-600 mb-1">Receitas</h3>
+              <h3 className="text-xs font-medium text-green-700 mb-1">Receitas recebidas</h3>
+              <p className="mb-1 text-xs text-gray-500">{monthLabel}</p>
               <p className="text-xl font-black text-green-700">
                 {formatCurrency(summaryData.currentMonthRevenue)}
               </p>
@@ -265,7 +276,8 @@ const SummaryCards = () => {
           {/* Despesas - Fundo branco */}
           <div className="bg-white p-3 rounded-xl shadow border border-gray-200 flex-1">
             <div className="text-center mb-2">
-              <h3 className="text-xs font-medium text-red-600 mb-1">Despesas</h3>
+              <h3 className="text-xs font-medium text-red-700 mb-1">Despesas pagas</h3>
+              <p className="mb-1 text-xs text-gray-500">{monthLabel}</p>
               <p className="text-xl font-black text-red-700">
                 {formatCurrency(summaryData.currentMonthExpense)}
               </p>
@@ -300,18 +312,12 @@ const SummaryCards = () => {
               <span className="text-blue-600 text-xl">💰</span>
             </div>
           </div>
-          <h3 className="text-sm font-medium text-gray-600 mb-2">Saldo Atual</h3>
+          <h3 className="text-sm font-medium text-gray-600 mb-2">Saldo realizado</h3>
           <p className="text-2xl font-bold text-gray-900 mb-2">
             {formatCurrency(summaryData.currentBalance)}
           </p>
-          <div className="flex items-center space-x-2">
-            <span className={`text-sm font-medium ${
-              summaryData.balancePercentage >= 0 ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {formatPercentage(summaryData.balancePercentage)}
-            </span>
-            <span className="text-sm text-gray-500">desde o mês passado</span>
-          </div>
+          <p className="text-sm text-gray-600">Saldo previsto: <strong>{formatCurrency(summaryData.plannedBalance)}</strong></p>
+          <p className="mt-1 text-xs text-gray-500">Realizado: apenas lançamentos pagos ou recebidos.</p>
         </div>
 
         {/* Receitas */}
@@ -321,7 +327,8 @@ const SummaryCards = () => {
               <span className="text-green-600 text-xl">📈</span>
             </div>
           </div>
-          <h3 className="text-sm font-medium text-gray-600 mb-2">Receitas</h3>
+          <h3 className="text-sm font-medium text-gray-600 mb-1">Receitas recebidas</h3>
+          <p className="mb-2 text-xs text-gray-500">{monthLabel}</p>
           <p className="text-2xl font-bold text-gray-900 mb-2">
             {formatCurrency(summaryData.currentMonthRevenue)}
           </p>
@@ -342,7 +349,8 @@ const SummaryCards = () => {
               <span className="text-red-600 text-xl">📉</span>
             </div>
           </div>
-          <h3 className="text-sm font-medium text-gray-600 mb-2">Despesas</h3>
+          <h3 className="text-sm font-medium text-gray-600 mb-1">Despesas pagas</h3>
+          <p className="mb-2 text-xs text-gray-500">{monthLabel}</p>
           <p className="text-2xl font-bold text-gray-900 mb-2">
             {formatCurrency(summaryData.currentMonthExpense)}
           </p>

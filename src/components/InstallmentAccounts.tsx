@@ -3,11 +3,14 @@ import { useTransactionsContext } from '../contexts/TransactionsContext'
 import { useCategories } from '../hooks/useCategories'
 import { useAuth } from '../contexts/AuthContext'
 import { sumAmounts } from '../utils/money'
+import { useNotice } from '../hooks/useNotice'
+import NoticeToast from './NoticeToast'
 
 const InstallmentAccounts: React.FC = () => {
   const { transactions, loading, error, updateTransaction } = useTransactionsContext()
   const { user } = useAuth()
   const { categories } = useCategories(user?.uid || 'test-user-123')
+  const { notice, notify, dismissNotice } = useNotice()
   
   // Estado para controlar visibilidade das parcelas
   const [visibleParcels, setVisibleParcels] = React.useState<{ [key: string]: number }>({})
@@ -144,7 +147,7 @@ const InstallmentAccounts: React.FC = () => {
       
     } catch (error) {
       console.error('❌ [InstallmentAccounts] Erro ao atualizar status da parcela:', error)
-      alert('Erro ao atualizar status da parcela. Tente novamente.')
+      notify('Erro ao atualizar a parcela. Tente novamente.', 'error')
     }
   }
 
@@ -281,9 +284,9 @@ const InstallmentAccounts: React.FC = () => {
           })
         )}
       </div>
+      <NoticeToast notice={notice} onDismiss={dismissNotice} />
     </div>
   )
 }
 
 export default InstallmentAccounts
-

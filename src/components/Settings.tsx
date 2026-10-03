@@ -2,33 +2,39 @@ import React, { useState } from 'react'
 import { useTransactionsContext } from '../contexts/TransactionsContext'
 import { useCategories } from '../hooks/useCategories'
 import { useAuth } from '../contexts/AuthContext'
+import { useNotice } from '../hooks/useNotice'
+import NoticeToast from './NoticeToast'
 
-const Settings = () => {
+const Settings = ({ onOpenAdmin }: { onOpenAdmin: () => void }) => {
   const { user } = useAuth()
   const { transactions, deleteTransaction } = useTransactionsContext()
   const { categories, deleteCategory } = useCategories(user?.uid || 'test-user-123')
   const [isDeleting, setIsDeleting] = useState<'transactions' | 'categories' | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
   const [confirmText, setConfirmText] = useState('')
+  const [isWorking, setIsWorking] = useState(false)
+  const { notice, notify, dismissNotice } = useNotice()
 
   const handleDeleteAllTransactions = async () => {
     if (confirmText !== 'EXCLUIR') {
-      alert('Por favor, digite "EXCLUIR" para confirmar a exclusão de todas as transações.')
+      notify('Digite EXCLUIR para confirmar.', 'error')
       return
     }
 
     setIsDeleting('transactions')
+    setIsWorking(true)
     try {
       // Deletar todas as transações
       for (const transaction of transactions) {
         await deleteTransaction(transaction.id)
       }
-      alert('✅ Todas as transações foram excluídas com sucesso!')
+      notify('Todas as transações foram excluídas.', 'success')
     } catch (error) {
       console.error('Erro ao excluir transações:', error)
-      alert('❌ Erro ao excluir transações. Tente novamente.')
+      notify('Não foi possível excluir todas as transações. Tente novamente.', 'error')
     } finally {
       setIsDeleting(null)
+      setIsWorking(false)
       setShowConfirm(false)
       setConfirmText('')
     }
@@ -36,22 +42,24 @@ const Settings = () => {
 
   const handleDeleteAllCategories = async () => {
     if (confirmText !== 'EXCLUIR') {
-      alert('Por favor, digite "EXCLUIR" para confirmar a exclusão de todas as categorias.')
+      notify('Digite EXCLUIR para confirmar.', 'error')
       return
     }
 
     setIsDeleting('categories')
+    setIsWorking(true)
     try {
       // Deletar todas as categorias
       for (const category of categories) {
         await deleteCategory(category.id)
       }
-      alert('✅ Todas as categorias foram excluídas com sucesso!')
+      notify('Todas as categorias foram excluídas.', 'success')
     } catch (error) {
       console.error('Erro ao excluir categorias:', error)
-      alert('❌ Erro ao excluir categorias. Tente novamente.')
+      notify('Não foi possível excluir todas as categorias. Tente novamente.', 'error')
     } finally {
       setIsDeleting(null)
+      setIsWorking(false)
       setShowConfirm(false)
       setConfirmText('')
     }
@@ -76,6 +84,9 @@ const Settings = () => {
         <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
         <p className="text-gray-600">Gerencie suas categorias e transações</p>
       </div>
+      <button type="button" onClick={onOpenAdmin} className="min-h-11 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+        Configuração técnica
+      </button>
 
       {/* Estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -148,12 +159,12 @@ const Settings = () => {
 
       {/* Modal de Confirmação */}
       {showConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="delete-all-title">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center mb-4">
               <div className="text-4xl mr-3">⚠️</div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 id="delete-all-title" className="text-lg font-semibold text-gray-900">
                   Confirmar Exclusão
                 </h3>
                 <p className="text-sm text-gray-600">
@@ -166,10 +177,11 @@ const Settings = () => {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="delete-all-confirmation" className="block text-sm font-medium text-gray-700 mb-2">
                 Digite "EXCLUIR" para confirmar:
               </label>
               <input
+                id="delete-all-confirmation"
                 type="text"
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
@@ -181,21 +193,23 @@ const Settings = () => {
             <div className="flex space-x-3">
               <button
                 onClick={closeConfirmDialog}
-                className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                disabled={isWorking}
+                className="flex-1 min-h-11 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={isDeleting === 'transactions' ? handleDeleteAllTransactions : handleDeleteAllCategories}
-                disabled={confirmText !== 'EXCLUIR' || (isDeleting === 'transactions' ? transactions.length === 0 : categories.length === 0)}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                disabled={isWorking || confirmText !== 'EXCLUIR' || (isDeleting === 'transactions' ? transactions.length === 0 : categories.length === 0)}
+                className="flex-1 min-h-11 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
-                {isDeleting === 'transactions' ? 'Excluir Transações' : 'Excluir Categorias'}
+                {isWorking ? 'Excluindo...' : isDeleting === 'transactions' ? 'Excluir Transações' : 'Excluir Categorias'}
               </button>
             </div>
           </div>
         </div>
       )}
+      <NoticeToast notice={notice} onDismiss={dismissNotice} />
     </div>
   )
 }

@@ -12,9 +12,10 @@ interface NewTransactionModalProps {
   onClose: () => void
   userId: string
   onTransactionCreating?: (creating: boolean) => void
+  onTransactionSaved?: (message: string) => void
 }
 
-const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }: NewTransactionModalProps) => {
+const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating, onTransactionSaved }: NewTransactionModalProps) => {
   const [formData, setFormData] = useState({
     description: '',
     amount: '',
@@ -30,6 +31,13 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
   })
 
   const [isInstallment, setIsInstallment] = useState(false)
+  const [showCategoryManager, setShowCategoryManager] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<{ amount?: string; category?: string; date?: string }>({})
+  const [formMessage, setFormMessage] = useState('')
+  const modalRef = useRef<HTMLDivElement>(null)
+  const amountInputRef = useRef<HTMLInputElement>(null)
+  const nestedDialogRef = useRef({ isCreatingCategory: false, isEditingCategory: false, showCategoryPicker: false, showEmojiPicker: false })
   const previewAmount = Number(formData.amount.replace(/\./g, '').replace(',', '.'))
   const previewInstallments = Number.isFinite(previewAmount) && previewAmount > 0 &&
     Number.isInteger(formData.installments) && formData.installments > 0 &&
@@ -48,6 +56,7 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
   const [editingCategory, setEditingCategory] = useState<any>(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showCategoryPicker, setShowCategoryPicker] = useState(false)
+  nestedDialogRef.current = { isCreatingCategory, isEditingCategory, showCategoryPicker, showEmojiPicker }
   const [currentPage, setCurrentPage] = useState(1)
   const [categoriesPerPage] = useState(10) // 10 categorias por página
   const emojiPickerRef = useRef<HTMLDivElement>(null)
@@ -60,11 +69,50 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
     icon: '📦'
   })
 
+  useEffect(() => {
+    if (!isOpen) return
+    const previousFocus = document.activeElement as HTMLElement | null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    amountInputRef.current?.focus()
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        const nested = nestedDialogRef.current
+        if (nested.showEmojiPicker) setShowEmojiPicker(false)
+        else if (nested.isCreatingCategory) setIsCreatingCategory(false)
+        else if (nested.isEditingCategory) setIsEditingCategory(false)
+        else if (nested.showCategoryPicker) setShowCategoryPicker(false)
+        else onClose()
+      }
+      if (event.key !== 'Tab' || !modalRef.current) return
+      const focusable = Array.from(modalRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+        .filter(element => element.getClientRects().length > 0)
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+      previousFocus?.focus()
+    }
+  }, [isOpen])
+
   // Hook do Firebase para categorias
   const { categories: firebaseCategories, createCategory, updateCategory, deleteCategory, loading: categoriesLoading, error: categoriesError } = useCategories(userId)
   
   // Hook do Firebase para transações
-  const { createTransaction, createTransactions, loading: transactionLoading } = useTransactionsContext()
+  const { createTransaction, createTransactions } = useTransactionsContext()
   
   
 
@@ -160,6 +208,8 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
       const categoryId = await createCategory(categoryData)
       console.log('✅ [NewTransactionModal] Categoria criada com sucesso! ID:', categoryId)
       
+      setFormData(previous => ({ ...previous, category: categoryData.name }))
+      setFieldErrors(previous => ({ ...previous, category: undefined }))
       setNewCategory({ name: '', color: '#3B82F6', icon: '📦' })
       setIsCreatingCategory(false)
     } catch (error) {
@@ -181,9 +231,17 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
   // Função para lidar com o submit do formulário
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    if (!formData.amount || !formData.category) {
-      alert('Por favor, preencha o valor e a categoria')
+    if (isSubmitting) return
+    setFormMessage('')
+    const errors: typeof fieldErrors = {}
+    if (!formData.amount || !Number.isFinite(previewAmount) || previewAmount <= 0) errors.amount = 'Informe um valor maior que zero.'
+    if (!formData.category) errors.category = 'Selecione uma categoria.'
+    try { parseLocalDate(formData.dueDate) } catch { errors.date = 'Selecione uma data válida.' }
+    setFieldErrors(errors)
+    if (Object.keys(errors).length > 0) {
+      if (errors.amount) amountInputRef.current?.focus()
+      else if (errors.category) document.getElementById('transaction-category')?.focus()
+      else document.getElementById('transaction-date')?.focus()
       return
     }
 
@@ -194,16 +252,12 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
       // Normalizar string monetária pt-BR (remove milhares e troca vírgula por ponto)
       const normalizeAmount = (s: string) => Number(s.replace(/\./g, '').replace(',', '.'))
       const baseAmount = normalizeAmount(formData.amount)
-      if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
-        alert('Informe um valor maior que zero.')
-        return
-      }
       const installmentAmounts = isInstallment && formData.installments > 1
         ? splitInstallments(baseAmount, formData.installments)
         : [baseAmount]
       
       // Garantir que temos uma data válida
-      const dueDateValue = formData.dueDate || formatLocalDate(new Date())
+      const dueDateValue = formData.dueDate
       
       // Criar data local para evitar problemas de fuso horário
       let startDate: Date
@@ -211,7 +265,7 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
         startDate = parseLocalDate(dueDateValue)
       } catch {
         console.error('❌ [NewTransactionModal] Data inválida:', dueDateValue)
-        alert('Por favor, selecione uma data válida.')
+        setFieldErrors({ date: 'Selecione uma data válida.' })
         return
       }
       
@@ -222,6 +276,7 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
         isoString: startDate.toISOString()
       })
       onTransactionCreating?.(true)
+      setIsSubmitting(true)
       
       if (isInstallment && formData.installments > 1) {
         // Criar múltiplas transações para parcelas
@@ -263,7 +318,7 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
         const transactionIds = await createTransactions(installmentTransactions)
         console.log('✅ [NewTransactionModal] Todas as parcelas criadas com sucesso! IDs:', transactionIds)
         
-        alert(`${formData.installments} parcelas criadas com sucesso!`)
+        onTransactionSaved?.(`${formData.installments} parcelas criadas com sucesso.`)
         
       } else {
         // Criar transação única
@@ -285,7 +340,7 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
         const transactionId = await createTransaction(transactionData)
         console.log('✅ [NewTransactionModal] Transação criada com sucesso! ID:', transactionId)
         
-        alert('Transação criada com sucesso!')
+        onTransactionSaved?.('Transação criada com sucesso.')
       }
       
       console.log('🔄 [NewTransactionModal] Limpando formulário e fechando modal...')
@@ -305,11 +360,13 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
         notifications: false
       })
       setIsInstallment(false)
+      setFieldErrors({})
       
       console.log('✅ [NewTransactionModal] Formulário limpo, fechando modal...')
       
       // Notificar que terminou de criar transação
       onTransactionCreating?.(false)
+      setIsSubmitting(false)
       onClose()
       
     } catch (error) {
@@ -318,7 +375,8 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
       
       // Notificar que terminou de criar transação (mesmo com erro)
       onTransactionCreating?.(false)
-      alert(`Erro ao criar transação: ${error instanceof Error ? error.message : 'Erro desconhecido'}`)
+      setIsSubmitting(false)
+      setFormMessage(`Não foi possível salvar: ${error instanceof Error ? error.message : 'erro desconhecido'}`)
     }
   }
 
@@ -399,11 +457,11 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
       }
       
       console.log('✅ Limpeza de duplicatas concluída!')
-      alert('Categorias duplicadas removidas com sucesso!')
+      onTransactionSaved?.('Categorias duplicadas removidas com sucesso.')
       
     } catch (error) {
       console.error('❌ Erro ao limpar duplicatas:', error)
-      alert('Erro ao limpar duplicatas. Tente novamente.')
+      setFormMessage('Não foi possível remover as categorias duplicadas. Tente novamente.')
     }
   }
 
@@ -430,8 +488,8 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start sm:items-center justify-center z-[9999] p-1 sm:p-4 animate-in fade-in duration-200 overflow-y-auto">
-      <div className="bg-white rounded-lg sm:rounded-3xl shadow-2xl w-full max-w-6xl max-h-[98vh] sm:max-h-[95vh] flex flex-col animate-in zoom-in-95 duration-200 scroll-smooth">
+    <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="new-transaction-title" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start sm:items-center justify-center z-[9999] p-1 sm:p-4 animate-in fade-in duration-200 overflow-y-auto">
+      <div className="bg-white rounded-lg sm:rounded-3xl shadow-2xl w-full max-w-4xl max-h-[98vh] sm:max-h-[95vh] flex flex-col animate-in zoom-in-95 duration-200 scroll-smooth">
         {/* Header */}
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 sm:p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
@@ -440,13 +498,15 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                 <span className="text-white text-base sm:text-xl">💰</span>
               </div>
               <div>
-                <h3 className="text-2xl sm:text-2xl font-bold text-gray-900">Nova Transação</h3>
+                <h3 id="new-transaction-title" className="text-2xl sm:text-2xl font-bold text-gray-900">Nova transação</h3>
                 <p className="text-sm sm:text-sm text-gray-600 hidden sm:block">Registre sua movimentação financeira</p>
               </div>
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 sm:p-2 hover:bg-white/80 rounded-lg sm:rounded-xl transition-all duration-200 hover:scale-105 group"
+              aria-label="Fechar nova transação"
+              className="min-h-11 min-w-11 p-2 hover:bg-white/80 rounded-lg sm:rounded-xl transition-all duration-200 hover:scale-105 group"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500 group-hover:text-gray-700">
                 <path d="M18 6 6 18"></path>
@@ -456,7 +516,8 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-2 sm:p-8 flex-1 overflow-y-auto">
+        <form onSubmit={handleSubmit} noValidate className="p-3 sm:p-6 flex-1 overflow-y-auto">
+          {formMessage && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{formMessage}</p>}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8">
             {/* Coluna Principal */}
             <div className="lg:col-span-2">
@@ -474,15 +535,20 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                   <div className="space-y-3">
                     {/* Valor - Campo Principal */}
                     <div>
-                      <label className="block text-base font-bold text-gray-900 mb-2">
+                      <label htmlFor="transaction-amount" className="block text-base font-bold text-gray-900 mb-2">
                         Valor*
                       </label>
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600 text-lg font-bold">R$</span>
                         <input
+                          id="transaction-amount"
+                          ref={amountInputRef}
                           type="text"
+                          inputMode="decimal"
                           placeholder="0,00"
                           className={getValueFieldClasses()}
+                          aria-invalid={Boolean(fieldErrors.amount)}
+                          aria-describedby={fieldErrors.amount ? 'transaction-amount-error' : undefined}
                           value={formData.amount}
                           onChange={(e) => {
                             // Máscara de moeda automática
@@ -494,19 +560,21 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                               });
                             }
                             setFormData({...formData, amount: value});
+                            setFieldErrors(previous => ({ ...previous, amount: undefined }))
                           }}
-                          required
                         />
                       </div>
+                      {fieldErrors.amount && <p id="transaction-amount-error" className="mt-1 text-sm text-red-700">{fieldErrors.amount}</p>}
                     </div>
 
                     {/* Descrição */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-500 mb-2">
+                      <label htmlFor="transaction-description" className="block text-sm font-medium text-gray-700 mb-2">
                         Descrição
                       </label>
                       <div className="relative">
                         <input
+                          id="transaction-description"
                           type="text"
                           placeholder="Ex: Supermercado, Salário..."
                           className="w-full px-3 sm:px-3 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white text-sm sm:text-sm"
@@ -521,20 +589,24 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
 
                     {/* Data */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-500 mb-2">
+                      <label htmlFor="transaction-date" className="block text-sm font-medium text-gray-700 mb-2">
                         Data
                       </label>
                       <div className="relative">
                         <input
+                          id="transaction-date"
                           type="date"
+                          aria-invalid={Boolean(fieldErrors.date)}
+                          aria-describedby={fieldErrors.date ? 'transaction-date-error' : undefined}
                           className="w-full px-3 sm:px-3 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white text-sm sm:text-sm"
                           value={formData.dueDate}
-                          onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
+                          onChange={(e) => { setFormData({...formData, dueDate: e.target.value}); setFieldErrors(previous => ({ ...previous, date: undefined })) }}
                         />
                         <div className="absolute inset-y-0 right-0 pr-3 hidden sm:flex items-center">
                           <span className="text-gray-400 text-sm">📅</span>
                         </div>
                       </div>
+                      {fieldErrors.date && <p id="transaction-date-error" className="mt-1 text-sm text-red-700">{fieldErrors.date}</p>}
                     </div>
                   </div>
 
@@ -546,7 +618,7 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                         id="installment"
                         checked={isInstallment}
                         onChange={(e) => setIsInstallment(e.target.checked)}
-                        className="w-3 h-3 sm:w-3 sm:h-3 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-1"
+                        className="w-5 h-5 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
                       />
                       <label htmlFor="installment" className="text-sm font-medium text-gray-500 cursor-pointer">
                         Parcelar transação
@@ -582,7 +654,7 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                                 }
                               }}
                               placeholder="2"
-                              className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-transparent text-sm"
+                              className="w-full min-h-11 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                             />
                           </div>
                           <div>
@@ -654,8 +726,31 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                   </div>
                 </div>
 
+                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <label htmlFor="transaction-category" className="mb-2 block text-sm font-semibold text-gray-800">Categoria*</label>
+                  <select
+                    id="transaction-category"
+                    value={formData.category}
+                    onChange={event => { setFormData(previous => ({ ...previous, category: event.target.value })); setFieldErrors(previous => ({ ...previous, category: undefined })) }}
+                    aria-invalid={Boolean(fieldErrors.category)}
+                    aria-describedby={fieldErrors.category ? 'transaction-category-error' : undefined}
+                    className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-600"
+                  >
+                    <option value="">Selecione uma categoria</option>
+                    {categories.map(category => <option key={category.id} value={category.name}>{category.icon} {category.name}</option>)}
+                  </select>
+                  {fieldErrors.category && <p id="transaction-category-error" className="mt-1 text-sm text-red-700">{fieldErrors.category}</p>}
+                  {categoriesError && <p className="mt-2 text-sm text-red-700">Não foi possível carregar as categorias.</p>}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setIsCreatingCategory(true)} className="min-h-11 rounded-lg border border-green-300 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-50">+ Nova categoria</button>
+                    <button type="button" onClick={() => setShowCategoryManager(value => !value)} aria-expanded={showCategoryManager} className="min-h-11 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
+                      {showCategoryManager ? 'Ocultar categorias' : 'Gerenciar categorias'}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Categorias */}
-                <div className="hidden sm:block bg-white rounded-xl p-2.5 sm:p-6 shadow-sm border border-gray-200 relative z-10">
+                {showCategoryManager && <div className="bg-white rounded-xl p-2.5 sm:p-6 shadow-sm border border-gray-200 relative z-10">
                   <div className="flex items-center justify-between mb-3 sm:mb-4">
                     <label className="block text-xs sm:text-sm font-semibold text-gray-700 flex items-center space-x-2">
                       <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-orange-500 rounded-full"></span>
@@ -696,11 +791,9 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                   </div>
                 
                 <div className="space-y-4">
-                    {/* Layout Mobile - Oculto - Apenas botões de ação visíveis */}
-                    <div className="hidden sm:block">
+                    <div>
 
-                    {/* Layout Desktop - Grid */}
-                    <div className="hidden sm:grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 max-h-80 overflow-y-auto pr-2 pt-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 scroll-smooth">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 max-h-80 overflow-y-auto pr-2 pt-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 scroll-smooth">
                     {paginatedCategories.length > 0 ? (
                       paginatedCategories.map((category: any, index: number) => (
                         <div key={index} className="relative group">
@@ -730,7 +823,8 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                           <button
                             type="button"
                             onClick={() => handleEditCategory(category)}
-                            className="absolute top-1 right-1 w-6 h-6 bg-gray-600 hover:bg-gray-700 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-110 z-[9999]"
+                            aria-label={`Editar categoria ${category.name}`}
+                            className="absolute top-1 right-1 w-10 h-10 bg-gray-600 hover:bg-gray-700 text-white rounded-full flex items-center justify-center opacity-100 sm:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-200 shadow-md hover:shadow-lg z-[9999]"
                           >
                             <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
@@ -741,7 +835,8 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                           <button
                             type="button"
                             onClick={() => handleDeleteCategory(category)}
-                            className="absolute top-1 left-1 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-110 z-[9999]"
+                            aria-label={`Excluir categoria ${category.name}`}
+                            className="absolute top-1 left-1 w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-100 sm:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-200 shadow-md hover:shadow-lg z-[9999]"
                           >
                             <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
@@ -807,8 +902,10 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                         type="button"
                         onClick={goToPreviousPage}
                         disabled={currentPage === 1}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label="Página anterior de categorias"
+                        className="min-h-11 min-w-11 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
+                        ‹
                       </button>
                       
                       {/* Botões de página */}
@@ -817,7 +914,9 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                           key={page}
                           type="button"
                           onClick={() => goToPage(page)}
-                          className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
+                          aria-label={`Página ${page} de categorias`}
+                          aria-current={currentPage === page ? 'page' : undefined}
+                          className={`min-w-10 min-h-10 rounded-lg text-sm font-medium transition-colors ${
                             currentPage === page
                               ? 'bg-blue-600 text-white'
                               : 'text-gray-600 hover:bg-gray-100'
@@ -831,13 +930,15 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                         type="button"
                         onClick={goToNextPage}
                         disabled={currentPage === totalPages}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label="Próxima página de categorias"
+                        className="min-h-11 min-w-11 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
+                        ›
                       </button>
                     </div>
                   )}
                 </div>
-              </div>
+              </div>}
             </div>
           </div>
 
@@ -850,7 +951,7 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                       <div className="hidden sm:flex w-5 h-5 lg:w-6 lg:h-6 bg-gray-300 rounded items-center justify-center">
                         <span className="text-gray-400 text-xs lg:text-sm">👁️</span>
                       </div>
-                      <h3 className="text-xs lg:text-sm font-medium text-gray-500">Pré-visualização</h3>
+                      <h3 className="text-sm font-semibold text-gray-800">Confira antes de salvar</h3>
                     </div>
                     <button 
                       type="button" 
@@ -944,10 +1045,10 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                   </button>
                   <button
                     type="submit"
-                    disabled={transactionLoading}
+                    disabled={isSubmitting}
                     className="w-full px-4 lg:px-4 py-3 lg:py-3 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 disabled:from-gray-400 disabled:to-gray-500 text-white rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none disabled:cursor-not-allowed text-base lg:text-base"
                   >
-                    {transactionLoading ? (
+                    {isSubmitting ? (
                       <div className="flex items-center justify-center space-x-2">
                         <div className="w-4 h-4 lg:w-4 lg:h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                         <span>Criando...</span>
@@ -973,10 +1074,10 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
               </button>
               <button
                 type="submit"
-                disabled={transactionLoading}
+                disabled={isSubmitting}
                 className="w-full px-4 py-4 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 disabled:from-gray-400 disabled:to-gray-500 text-white rounded-lg font-bold transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none disabled:cursor-not-allowed text-lg"
               >
-                {transactionLoading ? (
+                {isSubmitting ? (
                   <div className="flex items-center justify-center space-x-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                     <span>Criando...</span>

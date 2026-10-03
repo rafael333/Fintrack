@@ -1,6 +1,6 @@
 import { useAuth } from '../contexts/AuthContext'
 
-const AdminSettings = () => {
+const AdminSettings = ({ onBack }: { onBack: () => void }) => {
   const { user, logout } = useAuth()
 
   return (
@@ -12,6 +12,7 @@ const AdminSettings = () => {
             Sair
           </button>
         </div>
+        <button type="button" onClick={onBack} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">← Voltar para configurações</button>
         <p className="text-sm text-gray-600">Logado como: {user?.email}</p>
         <p className="text-gray-700">
           A conexão com o Firebase é definida pelas variáveis VITE_FIREBASE_* durante a compilação.

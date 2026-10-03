@@ -6,12 +6,17 @@ import { useAuth } from '../contexts/AuthContext'
 import PaidAccountsButton from './PaidAccountsButton'
 import { sumAmounts } from '../utils/money'
 import { formatLocalDate } from '../utils/dates'
+import { useNotice } from '../hooks/useNotice'
+import NoticeToast from './NoticeToast'
 
 const Transactions = () => {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
   const [isFiltersModalOpen, setIsFiltersModalOpen] = useState(false)
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null)
+  const [pendingDelete, setPendingDelete] = useState<any>(null)
+  const [isDeletingTransaction, setIsDeletingTransaction] = useState(false)
+  const { notice, notify, dismissNotice } = useNotice()
   const [selectedInstallmentIds, setSelectedInstallmentIds] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState('all')
@@ -165,45 +170,34 @@ const Transactions = () => {
 
 
   // Função para excluir transação
-  const handleDeleteTransaction = async (transaction: any) => {
+  const handleDeleteTransaction = (transaction: any) => setPendingDelete(transaction)
+
+  const confirmDeleteTransaction = async () => {
+    const transaction = pendingDelete
+    if (!transaction || isDeletingTransaction) return
+    setIsDeletingTransaction(true)
     try {
-      // Verificar se é uma transação parcelada
-      const isInstallmentGroup = transaction.installmentGroupId || transaction.id.startsWith('installment_')
-      
-      let confirmMessage = `Tem certeza que deseja excluir a transação "${transaction.description}"?\n\nEsta ação não pode ser desfeita.`
-      
-      if (isInstallmentGroup && transaction.installments > 1) {
-        confirmMessage = `Tem certeza que deseja excluir TODAS as ${transaction.installments} parcelas da transação "${transaction.description}"?\n\nEsta ação não pode ser desfeita e excluirá todas as parcelas.`
-      }
-      
-      const confirmDelete = window.confirm(confirmMessage)
-      
-      if (confirmDelete) {
-        if (isInstallmentGroup && transaction.installments > 1) {
+      const isInstallmentGroup = Boolean(transaction.installmentGroupId && transaction.installments > 1)
+      if (isInstallmentGroup) {
           // Excluir todas as parcelas do grupo
-          const groupId = transaction.installmentGroupId || transaction.id
+          const groupId = transaction.installmentGroupId
           const groupTransactions = transactions.filter(t => 
             t.installmentGroupId === groupId
           )
-          
-          // Mostrar loading
-          alert(`Excluindo ${groupTransactions.length} parcelas...`)
           
           // Excluir todas as parcelas de uma vez usando o contexto
           for (const groupTransaction of groupTransactions) {
             await deleteTransaction(groupTransaction.id)
           }
           
-          alert(`Todas as ${groupTransactions.length} parcelas foram excluídas com sucesso!`)
-        } else {
-          // Excluir transação individual
-          await deleteTransaction(transaction.id)
-          alert('Transação excluída com sucesso!')
-        }
-        // A lista será atualizada automaticamente pelo contexto
+          notify(`${groupTransactions.length} parcelas excluídas.`, 'success')
+      } else {
+        await deleteTransaction(transaction.id)
+        notify('Transação excluída.', 'success')
       }
+      setPendingDelete(null)
     } catch (error) {
-      alert('Erro ao excluir transação. Tente novamente.')
+      notify('Não foi possível excluir a transação. Tente novamente.', 'error')
       
       // Em caso de erro, tentar recarregar as transações para evitar estado inconsistente
       try {
@@ -211,6 +205,8 @@ const Transactions = () => {
       } catch (reloadError) {
         // Erro silencioso
       }
+    } finally {
+      setIsDeletingTransaction(false)
     }
   }
 
@@ -234,7 +230,7 @@ const Transactions = () => {
           )
           
           if (selectedTransactions.length === 0) {
-            alert('Nenhuma fatura foi selecionada!')
+            notify('Selecione uma parcela para continuar.', 'error')
             return
           }
           
@@ -265,7 +261,7 @@ const Transactions = () => {
           if (nextUnpaidTransaction) {
             await updateTransaction(nextUnpaidTransaction.id, { isPaid: true })
           } else {
-            alert('🎉 Todas as faturas desta transação já foram pagas!')
+            notify('Todas as parcelas desta transação já estão pagas.', 'info')
             return
           }
         }
@@ -1574,6 +1570,7 @@ const Transactions = () => {
       {/* Floating Action Button - Mobile */}
       <button 
         onClick={handleModalOpen}
+        aria-label="Nova transação"
         className="lg:hidden fixed bottom-28 right-6 text-white w-16 h-16 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 z-50 group"
         style={{
           backgroundColor: 'rgb(34 197 94)',
@@ -1593,17 +1590,39 @@ const Transactions = () => {
         </div>
       </button>
 
+      {pendingDelete && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-transaction-title">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h2 id="delete-transaction-title" className="text-lg font-semibold text-gray-900">Excluir transação?</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              {pendingDelete.installmentGroupId && pendingDelete.installments > 1
+                ? `Todas as ${pendingDelete.installments} parcelas de “${pendingDelete.description}” serão excluídas.`
+                : `“${pendingDelete.description}” será excluída.`}
+              {' '}Esta ação não pode ser desfeita.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" autoFocus onClick={() => setPendingDelete(null)} disabled={isDeletingTransaction} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
+              <button type="button" onClick={confirmDeleteTransaction} disabled={isDeletingTransaction} className="min-h-11 rounded-lg bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700 disabled:opacity-60">
+                {isDeletingTransaction ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Nova Transação */}
       <NewTransactionModal
         isOpen={isModalOpen}
         onClose={handleModalClose}
         userId={user?.uid || 'test-user-123'}
         onTransactionCreating={(creating) => setIsCreatingTransaction(creating)}
+        onTransactionSaved={message => notify(message, 'success')}
       />
+      <NoticeToast notice={notice} onDismiss={dismissNotice} />
 
       {/* Modal de Confirmação de Pagamento */}
       {isPaymentModalOpen && selectedTransaction && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="payment-dialog-title">
           <div className="bg-white rounded-lg p-4 lg:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center mb-4">
               <div className="flex-shrink-0">
@@ -1618,7 +1637,7 @@ const Transactions = () => {
                 )}
               </div>
               <div className="ml-3">
-                <h3 className="text-lg font-medium text-gray-900">
+                <h3 id="payment-dialog-title" className="text-lg font-medium text-gray-900">
                   {selectedTransaction.isPaid 
                     ? (selectedTransaction.type === 'receita' ? 'Desmarcar Recebimento' : 'Desmarcar Pagamento')
                     : (selectedTransaction.type === 'receita' ? 'Confirmar Recebimento' : 'Confirmar Pagamento')
@@ -1842,13 +1861,15 @@ const Transactions = () => {
 
       {/* Modal de Filtros */}
       {isFiltersModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="filters-dialog-title">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 lg:p-6 border-b border-gray-200">
-              <h3 className="text-base lg:text-lg font-semibold text-gray-900">Filtros</h3>
+              <h3 id="filters-dialog-title" className="text-base lg:text-lg font-semibold text-gray-900">Filtros</h3>
               <button 
+                type="button"
                 onClick={() => setIsFiltersModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                aria-label="Fechar filtros"
+                className="min-h-11 min-w-11 text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <span className="text-lg lg:text-xl">×</span>
               </button>
