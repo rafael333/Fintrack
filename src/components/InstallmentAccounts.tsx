@@ -2,6 +2,7 @@ import React from 'react'
 import { useTransactionsContext } from '../contexts/TransactionsContext'
 import { useCategories } from '../hooks/useCategories'
 import { useAuth } from '../contexts/AuthContext'
+import { sumAmounts } from '../utils/money'
 
 const InstallmentAccounts: React.FC = () => {
   const { transactions, loading, error, updateTransaction } = useTransactionsContext()
@@ -57,8 +58,9 @@ const InstallmentAccounts: React.FC = () => {
         description: firstTransaction.description.replace(/\s*\(\d+\/\d+\)$/, ''), // Remove (1/2) da descrição
         totalInstallments: firstTransaction.installments!,
         paidInstallments: sortedGroup.filter(t => t.isPaid === true).length, // Apenas transações explicitamente marcadas como pagas
-        totalAmount: firstTransaction.totalInstallmentAmount || firstTransaction.amount,
+        totalAmount: firstTransaction.totalInstallmentAmount ?? sumAmounts(sortedGroup.map(t => t.amount)),
         installmentAmount: firstTransaction.amount,
+        remainingAmount: sumAmounts(sortedGroup.filter(t => !t.isPaid).map(t => t.amount)),
         firstDate: firstTransaction.date,
         lastDate: lastTransaction.date,
         type: firstTransaction.type,
@@ -156,7 +158,7 @@ const InstallmentAccounts: React.FC = () => {
           installmentGroups.map((group) => {
             const category = getCategoryByName(group.category)
             const progressPercentage = (group.paidInstallments / group.totalInstallments) * 100
-            const remainingAmount = group.totalAmount - (group.paidInstallments * group.installmentAmount)
+            const remainingAmount = group.remainingAmount
             const isCompleted = group.paidInstallments === group.totalInstallments
             
             // Criar groupKey para este grupo
@@ -204,9 +206,9 @@ const InstallmentAccounts: React.FC = () => {
                     <p className={`text-xs lg:text-sm font-semibold ${
                       group.type === 'receita' ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      {group.type === 'receita' ? '+' : '-'}R$ {group.installmentAmount.toLocaleString('pt-BR')}
+                      {group.type === 'receita' ? '+' : '-'}R$ {group.installmentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </p>
-                    <p className="text-[10px] lg:text-xs text-gray-500">R$ {group.installmentAmount.toLocaleString('pt-BR')}/parcela</p>
+                    <p className="text-[10px] lg:text-xs text-gray-500">R$ {group.installmentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/parcela</p>
                   </div>
                 </div>
                 <div className="mt-2 lg:mt-3">
@@ -229,7 +231,7 @@ const InstallmentAccounts: React.FC = () => {
                     <span className={`font-bold ${
                       group.type === 'receita' ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      Restante: R$ {remainingAmount.toLocaleString('pt-BR')}
+                      Restante: R$ {remainingAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                   
@@ -284,5 +286,4 @@ const InstallmentAccounts: React.FC = () => {
 }
 
 export default InstallmentAccounts
-
 

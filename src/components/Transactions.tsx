@@ -4,6 +4,8 @@ import { useTransactionsContext } from '../contexts/TransactionsContext'
 import { useCategories } from '../hooks/useCategories'
 import { useAuth } from '../contexts/AuthContext'
 import PaidAccountsButton from './PaidAccountsButton'
+import { sumAmounts } from '../utils/money'
+import { formatLocalDate } from '../utils/dates'
 
 const Transactions = () => {
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -43,10 +45,6 @@ const Transactions = () => {
   const { user } = useAuth()
   const transactionsContext = useTransactionsContext()
   const { categories } = useCategories(user?.uid || 'test-user-123')
-  
-  if (!transactionsContext) {
-    return <div>Erro: Contexto não encontrado</div>
-  }
   
   const { transactions, loading: transactionsLoading, error: transactionsError, loadTransactions, deleteTransaction, updateTransaction } = transactionsContext
 
@@ -113,22 +111,22 @@ const Transactions = () => {
         const firstDay = new Date(currentYear, currentMonth, 1)
         const lastDay = new Date(currentYear, currentMonth + 1, 0)
         return {
-          start: firstDay.toISOString().split('T')[0],
-          end: lastDay.toISOString().split('T')[0]
+          start: formatLocalDate(firstDay),
+          end: formatLocalDate(lastDay)
         }
       case 'mes-passado':
         const firstDayLastMonth = new Date(currentYear, currentMonth - 1, 1)
         const lastDayLastMonth = new Date(currentYear, currentMonth, 0)
         return {
-          start: firstDayLastMonth.toISOString().split('T')[0],
-          end: lastDayLastMonth.toISOString().split('T')[0]
+          start: formatLocalDate(firstDayLastMonth),
+          end: formatLocalDate(lastDayLastMonth)
         }
       case 'ultimos-3-meses':
         const threeMonthsAgo = new Date(currentYear, currentMonth - 2, 1)
         const lastDayCurrentMonth = new Date(currentYear, currentMonth + 1, 0)
         return {
-          start: threeMonthsAgo.toISOString().split('T')[0],
-          end: lastDayCurrentMonth.toISOString().split('T')[0]
+          start: formatLocalDate(threeMonthsAgo),
+          end: formatLocalDate(lastDayCurrentMonth)
         }
       default:
         return { start: '', end: '' }
@@ -370,7 +368,8 @@ const Transactions = () => {
               type: transaction.type,
               installments: transaction.installments,
               installmentAmount: transaction.amount,
-              totalAmount: transaction.totalInstallmentAmount || (transaction.amount * transaction.installments),
+              totalAmount: transaction.totalInstallmentAmount ?? (transaction.amount * transaction.installments),
+              remainingAmount: 0,
               firstDate: transaction.date,
               lastDate: transaction.date,
               installmentGroupId: transaction.installmentGroupId,
@@ -401,9 +400,9 @@ const Transactions = () => {
         // Filtrar parcelas que estão no período selecionado
         const transactionsInPeriod = group.allTransactions.filter((transaction: any) => {
           if (filterDate) {
-            return transaction.date.toISOString().split('T')[0] === filterDate
+            return formatLocalDate(transaction.date) === filterDate
           } else if (effectiveStartDate && effectiveEndDate) {
-            const transactionDate = transaction.date.toISOString().split('T')[0]
+            const transactionDate = formatLocalDate(transaction.date)
             const isInPeriod = transactionDate >= effectiveStartDate && transactionDate <= effectiveEndDate
             return isInPeriod
           }
@@ -429,7 +428,10 @@ const Transactions = () => {
         // Recalcular o totalAmount baseado no valor original da transação
         if (group.allTransactions && group.allTransactions.length > 0) {
           const firstTransaction = group.allTransactions[0]
-          group.totalAmount = firstTransaction.totalInstallmentAmount || (firstTransaction.amount * firstTransaction.installments)
+          group.totalAmount = firstTransaction.totalInstallmentAmount ?? sumAmounts(group.allTransactions.map((transaction: any) => transaction.amount))
+          group.remainingAmount = sumAmounts(group.allTransactions
+            .filter((transaction: any) => !transaction.isPaid)
+            .map((transaction: any) => transaction.amount))
         }
         
         // Atualizar as datas do grupo baseado nas parcelas no período
@@ -538,7 +540,7 @@ const Transactions = () => {
     if (!transaction.installmentGroupId || !transaction.installments || transaction.installments <= 1) {
       // É uma transação única - aplicar filtro de data
       if (filterDate) {
-        matchesDate = transaction.date.toISOString().split('T')[0] === filterDate
+        matchesDate = formatLocalDate(transaction.date) === filterDate
       } else {
         // Usar as datas baseadas no período selecionado
         const { start, end } = getDateRange(periodFilter)
@@ -546,7 +548,7 @@ const Transactions = () => {
         const effectiveEndDate = periodFilter === 'personalizado' ? endDate : end
         
         if (effectiveStartDate && effectiveEndDate) {
-          const transactionDate = transaction.date.toISOString().split('T')[0]
+          const transactionDate = formatLocalDate(transaction.date)
           matchesDate = transactionDate >= effectiveStartDate && transactionDate <= effectiveEndDate
         }
       }
@@ -1071,7 +1073,7 @@ const Transactions = () => {
                           <div className={`text-sm font-semibold ${
                             transaction.type === 'receita' ? 'text-green-600' : 'text-red-600'
                           }`}>
-                            {transaction.type === 'receita' ? '+' : '-'}R$ {Math.max(0, transaction.totalAmount - (transaction.installmentAmount * transaction.paidInstallments)).toFixed(2)}
+                            {transaction.type === 'receita' ? '+' : '-'}R$ {transaction.remainingAmount.toFixed(2)}
                           </div>
                           <div className="text-xs text-gray-500">
                             Total: R$ {transaction.totalAmount.toFixed(2)}
@@ -1358,7 +1360,7 @@ const Transactions = () => {
                         <div className="flex flex-col">
                           <span>{transaction.type === 'receita' ? '+' : '-'}R$ {transaction.totalAmount.toFixed(2)}</span>
                           <span className="text-[8px] lg:text-xs text-gray-500 hidden lg:inline">
-                            Restante: R$ {Math.max(0, transaction.totalAmount - (transaction.installmentAmount * transaction.paidInstallments)).toFixed(2)}
+                            Restante: R$ {transaction.remainingAmount.toFixed(2)}
                           </span>
                         </div>
                       </td>

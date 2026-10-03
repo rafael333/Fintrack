@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { Transaction } from '../firebase/types'
 import { categoryService } from '../firebase/services/categories'
 import Lottie from 'lottie-react'
+import { sumAmounts } from '../utils/money'
 
 interface SummaryData {
   currentBalance: number
@@ -59,52 +60,59 @@ const SummaryCards = () => {
              transactionDate.getFullYear() === previousYear
     })
 
-    // Calcular receitas (apenas as que foram pagas/recebidas, independente do mês)
-    const currentMonthRevenue = transactions
+    // Calcular receitas pagas/recebidas do mês atual
+    const currentMonthRevenue = currentMonthTransactions
       .filter(t => t.type === 'receita' && t.isPaid)
-      .reduce((sum, t) => sum + t.amount, 0)
+      .map(t => t.amount)
+    const currentRevenue = sumAmounts(currentMonthRevenue)
 
-    // Calcular despesas (apenas as que foram pagas, independente do mês)
-    const currentMonthExpense = transactions
+    // Calcular despesas pagas do mês atual
+    const currentMonthExpense = currentMonthTransactions
       .filter(t => t.type === 'despesa' && t.isPaid)
-      .reduce((sum, t) => sum + t.amount, 0)
+      .map(t => t.amount)
+    const currentExpense = sumAmounts(currentMonthExpense)
 
 
     // Calcular receitas do mês anterior (apenas as que foram pagas/recebidas)
     const previousMonthRevenue = previousMonthTransactions
       .filter(t => t.type === 'receita' && t.isPaid)
-      .reduce((sum, t) => sum + t.amount, 0)
+      .map(t => t.amount)
+    const previousRevenue = sumAmounts(previousMonthRevenue)
 
     // Calcular despesas do mês anterior (apenas as que foram pagas)
     const previousMonthExpense = previousMonthTransactions
       .filter(t => t.type === 'despesa' && t.isPaid)
-      .reduce((sum, t) => sum + t.amount, 0)
+      .map(t => t.amount)
+    const previousExpense = sumAmounts(previousMonthExpense)
 
     // Calcular saldo atual (receitas pagas - despesas pagas)
-    const currentBalance = currentMonthRevenue - currentMonthExpense
+    const currentBalance = sumAmounts([
+      sumAmounts(transactions.filter(t => t.type === 'receita' && t.isPaid).map(t => t.amount)),
+      -sumAmounts(transactions.filter(t => t.type === 'despesa' && t.isPaid).map(t => t.amount))
+    ])
 
     // Calcular percentuais de variação
-    const revenuePercentage = previousMonthRevenue > 0 
-      ? ((currentMonthRevenue - previousMonthRevenue) / previousMonthRevenue) * 100
+    const revenuePercentage = previousRevenue > 0
+      ? ((currentRevenue - previousRevenue) / previousRevenue) * 100
       : 0
 
-    const expensePercentage = previousMonthExpense > 0
-      ? ((currentMonthExpense - previousMonthExpense) / previousMonthExpense) * 100
+    const expensePercentage = previousExpense > 0
+      ? ((currentExpense - previousExpense) / previousExpense) * 100
       : 0
 
     // Calcular percentual do saldo (baseado na variação líquida)
-    const currentNet = currentMonthRevenue - currentMonthExpense
-    const previousNet = previousMonthRevenue - previousMonthExpense
+    const currentNet = currentRevenue - currentExpense
+    const previousNet = previousRevenue - previousExpense
     const balancePercentage = previousNet !== 0
       ? ((currentNet - previousNet) / Math.abs(previousNet)) * 100
       : 0
 
     return {
       currentBalance,
-      currentMonthRevenue,
-      currentMonthExpense,
-      previousMonthRevenue,
-      previousMonthExpense,
+      currentMonthRevenue: currentRevenue,
+      currentMonthExpense: currentExpense,
+      previousMonthRevenue: previousRevenue,
+      previousMonthExpense: previousExpense,
       revenuePercentage,
       expensePercentage,
       balancePercentage
@@ -353,4 +361,3 @@ const SummaryCards = () => {
 }
 
 export default SummaryCards
-

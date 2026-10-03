@@ -7,6 +7,7 @@ interface TransactionsContextType {
   loading: boolean;
   error: string | null;
   createTransaction: (transactionData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>) => Promise<string>;
+  createTransactions: (transactionsData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>[]) => Promise<string[]>;
   updateTransaction: (id: string, updates: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   loadTransactions: () => Promise<void>;
@@ -64,10 +65,25 @@ export const TransactionsProvider: React.FC<TransactionsProviderProps> = ({ chil
     }
   };
 
+  const createTransactions = async (transactionsData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<string[]> => {
+    try {
+      const ids = await transactionService.createMany(transactionsData);
+      const now = new Date();
+      setTransactions(previous => [
+        ...transactionsData.map((data, index) => ({ ...data, id: ids[index], createdAt: now, updatedAt: now })),
+        ...previous
+      ]);
+      return ids;
+    } catch (err) {
+      setError('Erro ao criar parcelas');
+      throw err;
+    }
+  };
+
   // Atualizar transação
   const updateTransaction = async (id: string, updates: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>>): Promise<void> => {
     try {
-      // Atualizar estado local imediatamente para melhor UX
+      await transactionService.update(id, updates);
       setTransactions((prevTransactions: Transaction[]) => 
         prevTransactions.map((transaction: Transaction) => 
           transaction.id === id 
@@ -75,8 +91,6 @@ export const TransactionsProvider: React.FC<TransactionsProviderProps> = ({ chil
             : transaction
         )
       );
-      
-      await transactionService.update(id, updates);
       
     } catch (err) {
       setError('Erro ao atualizar transação');
@@ -118,6 +132,7 @@ export const TransactionsProvider: React.FC<TransactionsProviderProps> = ({ chil
     loading,
     error,
     createTransaction,
+    createTransactions,
     updateTransaction,
     deleteTransaction,
     loadTransactions
@@ -137,4 +152,3 @@ export const useTransactionsContext = (): TransactionsContextType => {
   }
   return context;
 };
-

@@ -3,6 +3,8 @@ import data from '@emoji-mart/data'
 import Picker from '@emoji-mart/react'
 import { useCategories } from '../hooks/useCategories'
 import { useTransactionsContext } from '../contexts/TransactionsContext'
+import { addMonthsClamped, formatLocalDate, parseLocalDate } from '../utils/dates'
+import { splitInstallments } from '../utils/money'
 
 
 interface NewTransactionModalProps {
@@ -18,8 +20,8 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
     amount: '',
     type: 'Despesa',
     category: '',
-    date: new Date().toISOString().split('T')[0],
-    dueDate: new Date().toISOString().split('T')[0],
+    date: formatLocalDate(new Date()),
+    dueDate: formatLocalDate(new Date()),
         paymentMethod: 'dinheiro',
     installments: 2,
     recurring: false,
@@ -28,6 +30,19 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
   })
 
   const [isInstallment, setIsInstallment] = useState(false)
+  const previewAmount = Number(formData.amount.replace(/\./g, '').replace(',', '.'))
+  const previewInstallments = Number.isFinite(previewAmount) && previewAmount > 0 &&
+    Number.isInteger(formData.installments) && formData.installments > 0 &&
+    Math.round(previewAmount * 100) >= formData.installments
+    ? splitInstallments(previewAmount, formData.installments)
+    : []
+  const lastPreviewAmount = previewInstallments[previewInstallments.length - 1]
+  let previewStartDate: Date | null = null
+  try {
+    previewStartDate = parseLocalDate(formData.dueDate)
+  } catch {
+    // O campo de data pode estar temporariamente vazio durante a edição.
+  }
   const [isCreatingCategory, setIsCreatingCategory] = useState(false)
   const [isEditingCategory, setIsEditingCategory] = useState(false)
   const [editingCategory, setEditingCategory] = useState<any>(null)
@@ -49,7 +64,7 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
   const { categories: firebaseCategories, createCategory, updateCategory, deleteCategory, loading: categoriesLoading, error: categoriesError } = useCategories(userId)
   
   // Hook do Firebase para transações
-  const { createTransaction, loading: transactionLoading } = useTransactionsContext()
+  const { createTransaction, createTransactions, loading: transactionLoading } = useTransactionsContext()
   
   
 
@@ -176,23 +191,25 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
       console.log('🚀 [NewTransactionModal] Iniciando criação de transação...')
       console.log('📊 [NewTransactionModal] Dados do formulário:', formData)
       
-      // Notificar que está criando transação
-      onTransactionCreating?.(true)
-      
       // Normalizar string monetária pt-BR (remove milhares e troca vírgula por ponto)
       const normalizeAmount = (s: string) => Number(s.replace(/\./g, '').replace(',', '.'))
       const baseAmount = normalizeAmount(formData.amount)
-      const installmentAmount = Math.round((baseAmount / (formData.installments || 1)) * 100) / 100
+      if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+        alert('Informe um valor maior que zero.')
+        return
+      }
+      const installmentAmounts = isInstallment && formData.installments > 1
+        ? splitInstallments(baseAmount, formData.installments)
+        : [baseAmount]
       
       // Garantir que temos uma data válida
-      const dueDateValue = formData.dueDate || new Date().toISOString().split('T')[0]
+      const dueDateValue = formData.dueDate || formatLocalDate(new Date())
       
       // Criar data local para evitar problemas de fuso horário
-      const [year, month, day] = dueDateValue.split('-').map(Number)
-      const startDate = new Date(year, month - 1, day) // month - 1 porque Date usa 0-11 para meses
-      
-      // Validar se a data é válida
-      if (isNaN(startDate.getTime())) {
+      let startDate: Date
+      try {
+        startDate = parseLocalDate(dueDateValue)
+      } catch {
         console.error('❌ [NewTransactionModal] Data inválida:', dueDateValue)
         alert('Por favor, selecione uma data válida.')
         return
@@ -204,22 +221,22 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
         localString: startDate.toLocaleDateString('pt-BR'),
         isoString: startDate.toISOString()
       })
+      onTransactionCreating?.(true)
       
       if (isInstallment && formData.installments > 1) {
         // Criar múltiplas transações para parcelas
         console.log(`📦 [NewTransactionModal] Criando ${formData.installments} transações parceladas...`)
         
-        const transactionPromises = []
+        const installmentTransactions = []
         const installmentGroupId = `installment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         
         for (let i = 0; i < formData.installments; i++) {
-          const installmentDate = new Date(startDate)
-          installmentDate.setMonth(startDate.getMonth() + i)
+          const installmentDate = addMonthsClamped(startDate, i)
           
           const transactionData = {
             userId: userId,
             description: `${formData.description.trim()} (${i + 1}/${formData.installments})`,
-            amount: installmentAmount,
+            amount: installmentAmounts[i],
             type: formData.type.toLowerCase() as 'receita' | 'despesa',
             category: formData.category,
             date: installmentDate,
@@ -236,14 +253,14 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
           console.log(`📤 [NewTransactionModal] Criando parcela ${i + 1}:`, {
             ...transactionData,
             amount: transactionData.amount,
-            installmentAmount: installmentAmount,
+            installmentAmount: installmentAmounts[i],
             baseAmount: baseAmount
           })
-          transactionPromises.push(createTransaction(transactionData))
+          installmentTransactions.push(transactionData)
         }
         
         // Aguardar todas as transações serem criadas
-        const transactionIds = await Promise.all(transactionPromises)
+        const transactionIds = await createTransactions(installmentTransactions)
         console.log('✅ [NewTransactionModal] Todas as parcelas criadas com sucesso! IDs:', transactionIds)
         
         alert(`${formData.installments} parcelas criadas com sucesso!`)
@@ -279,8 +296,8 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
         amount: '',
         type: 'Despesa',
         category: '',
-        date: new Date().toISOString().split('T')[0],
-        dueDate: new Date().toISOString().split('T')[0],
+        date: formatLocalDate(new Date()),
+        dueDate: formatLocalDate(new Date()),
         paymentMethod: 'dinheiro',
         installments: 1,
         recurring: false,
@@ -573,9 +590,9 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                               Valor por parcela
                             </label>
                             <div className="px-2 py-1 bg-white border border-gray-300 rounded-md text-sm font-semibold text-green-600">
-                              R$ {formData.amount ? (
-                                Math.round((Number(formData.amount.replace(/\./g, '').replace(',', '.')) / (formData.installments || 1)) * 100) / 100
-                              ).toFixed(2) : '0,00'}
+                              R$ {(previewInstallments[0] || 0).toFixed(2).replace('.', ',')}
+                              {previewInstallments.length > 1 && lastPreviewAmount !== previewInstallments[0] &&
+                                ` ou R$ ${lastPreviewAmount.toFixed(2).replace('.', ',')}`}
                             </div>
                           </div>
                         </div>
@@ -894,20 +911,19 @@ const NewTransactionModal = ({ isOpen, onClose, userId, onTransactionCreating }:
                   {isInstallment && formData.installments > 1 && (
                     <div className="mt-3 p-2 lg:p-3 bg-blue-50 rounded-lg border border-blue-200">
                       <div className="text-xs text-blue-700 font-medium mb-2">
-                        {formData.installments}x de R$ {formData.amount ? (
-                          Math.round((Number(formData.amount.replace(/\./g, '').replace(',', '.')) / formData.installments) * 100) / 100
-                        ).toFixed(2) : '0.00'}
+                        {formData.installments} parcelas de R$ {(previewInstallments[0] || 0).toFixed(2).replace('.', ',')}
+                        {previewInstallments.length > 1 && lastPreviewAmount !== previewInstallments[0] &&
+                          ` ou R$ ${lastPreviewAmount.toFixed(2).replace('.', ',')}`}
                       </div>
                       <div className="text-xs text-blue-600">
                         <div className="font-semibold mb-1">Datas das parcelas:</div>
                         <div className="space-y-1 max-h-20 overflow-y-auto">
                           {Array.from({ length: formData.installments }, (_, i) => {
-                            const installmentDate = new Date(formData.dueDate)
-                            installmentDate.setMonth(installmentDate.getMonth() + i)
+                            const installmentDate = previewStartDate ? addMonthsClamped(previewStartDate, i) : null
                             return (
                               <div key={i} className="flex justify-between text-xs">
                                 <span>Parcela {i + 1}:</span>
-                                <span>{installmentDate.toLocaleDateString('pt-BR')}</span>
+                                <span>{installmentDate?.toLocaleDateString('pt-BR') || '-'}</span>
                               </div>
                             )
                           })}

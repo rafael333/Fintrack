@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext'
 import Lottie from 'lottie-react';
 import { settingsService } from '../firebase/services/settings';
 import { CSSProperties } from 'react';
+import { sumAmounts } from '../utils/money';
+import { formatLocalDate } from '../utils/dates';
 
 
 // Dados de exemplo para gráficos (será substituído pelos dados reais das transações)
@@ -181,7 +183,7 @@ export function AreaChartSemiFilled() {
         return resultItem
       })
       .sort((a, b) => {
-        const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+        const today = formatLocalDate(new Date()) // YYYY-MM-DD
         const dateA = a.date
         const dateB = b.date
         
@@ -358,9 +360,9 @@ export function AreaChartSemiFilled() {
       return isCurrentMonth
     })
 
-    const receitas = currentMonthTransactions
+    const receitas = sumAmounts(currentMonthTransactions
       .filter(t => t.type === 'receita')
-      .reduce((sum, t) => sum + t.amount, 0)
+      .map(t => t.amount))
     
     // Debug: Log das transações de receita do mês atual
     const receitasTransactions = currentMonthTransactions.filter(t => t.type === 'receita')
@@ -392,11 +394,11 @@ export function AreaChartSemiFilled() {
       }))
     })
     
-    const despesas = currentMonthTransactions
+    const despesas = sumAmounts(currentMonthTransactions
       .filter(t => t.type === 'despesa')
-      .reduce((sum, t) => sum + t.amount, 0)
+      .map(t => t.amount))
 
-    return { receitas, despesas, saldo: receitas - despesas }
+    return { receitas, despesas, saldo: sumAmounts([receitas, -despesas]) }
   }, [transactions, currentMonth, currentYear])
 
   // Calcular dias restantes no mês
@@ -1087,7 +1089,7 @@ const Budgets = () => {
         saldo: (values as { receitas: number; despesas: number }).receitas - (values as { receitas: number; despesas: number }).despesas
       }))
       .sort((a, b) => {
-        const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+        const today = formatLocalDate(new Date()) // YYYY-MM-DD
         const dateA = a.date
         const dateB = b.date
         
@@ -1174,16 +1176,16 @@ const Budgets = () => {
     })
 
     // Calcular receitas e despesas do mês atual
-    const receitas = currentMonthTransactions
+    const receitas = sumAmounts(currentMonthTransactions
       .filter(t => t.type === 'receita')
-      .reduce((sum, t) => sum + t.amount, 0)
+      .map(t => t.amount))
     
-    const despesas = currentMonthTransactions
+    const despesas = sumAmounts(currentMonthTransactions
       .filter(t => t.type === 'despesa')
-      .reduce((sum, t) => sum + t.amount, 0)
+      .map(t => t.amount))
 
     // Calcular saldo considerando todas as transações do mês (receitas - despesas)
-    const saldo = receitas - despesas
+    const saldo = sumAmounts([receitas, -despesas])
 
     return { receitas, despesas, saldo }
   }, [transactions, currentMonth, currentYear])
@@ -1250,22 +1252,22 @@ const Budgets = () => {
         const firstDay = new Date(currentYear, currentMonth, 1)
         const lastDay = new Date(currentYear, currentMonth + 1, 0)
         return {
-          start: firstDay.toISOString().split('T')[0],
-          end: lastDay.toISOString().split('T')[0]
+          start: formatLocalDate(firstDay),
+          end: formatLocalDate(lastDay)
         }
         case 'mes-passado':
         const firstDayLastMonth = new Date(currentYear, currentMonth - 1, 1)
         const lastDayLastMonth = new Date(currentYear, currentMonth, 0)
         return {
-          start: firstDayLastMonth.toISOString().split('T')[0],
-          end: lastDayLastMonth.toISOString().split('T')[0]
+          start: formatLocalDate(firstDayLastMonth),
+          end: formatLocalDate(lastDayLastMonth)
         }
         case 'ultimos-3-meses':
         const threeMonthsAgo = new Date(currentYear, currentMonth - 2, 1) // Corrigido: -2 em vez de -3
         const lastDayCurrentMonth = new Date(currentYear, currentMonth + 1, 0)
         return {
-          start: threeMonthsAgo.toISOString().split('T')[0],
-          end: lastDayCurrentMonth.toISOString().split('T')[0]
+          start: formatLocalDate(threeMonthsAgo),
+          end: formatLocalDate(lastDayCurrentMonth)
         }
       default:
         return { start: '', end: '' }
@@ -1584,14 +1586,14 @@ const Budgets = () => {
       }
     })
 
-    const processedChartData = sortedDates.map(date => {
+    const processedChartData = sortedDates.map((date, index) => {
       const dayData = transactionsByDate[date]
       return {
         date: new Date(date),
         name: new Date(date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
         receitas: dayData.receitas,
         despesas: dayData.despesas,
-        saldo: balance
+        saldo: processedCashFlowData[index].balance
       }
     })
 
@@ -2709,10 +2711,6 @@ const Budgets = () => {
 }
 
 export default Budgets
-
-
-
-
 
 
 

@@ -11,6 +11,7 @@
     "build:netlify": "npm run clean && npm run build:prod",
     "build:netlify-simple": "npm install && npx tsc && npx vite build --mode production",
     "preview": "npx vite preview",
+    "test": "tsx --test tests/*.test.mjs",
     "lint": "npx eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "clean": "npx rimraf dist node_modules/.vite"
   },
@@ -42,7 +43,8 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.4",
     "rimraf": "^5.0.5",
-    "terser": "^5.24.0"
+    "terser": "^5.24.0",
+    "tsx": "^4.23.15"
   },
   "keywords": [
     "finanças",

@@ -10,33 +10,43 @@ import {
   where, 
   orderBy, 
   limit,
-  Timestamp 
+  Timestamp,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '../config';
 import { Transaction } from '../types';
 
 const COLLECTION_NAME = 'transactions';
 
+const toFirestoreData = (transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>, now: Date) => ({
+  ...Object.fromEntries(Object.entries(transaction).filter(([_, value]) => value !== undefined)),
+  date: Timestamp.fromDate(transaction.date),
+  createdAt: Timestamp.fromDate(now),
+  updatedAt: Timestamp.fromDate(now),
+});
+
 export const transactionService = {
   // Criar nova transação
   async create(transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
     const now = new Date();
-    
-    // Remover campos undefined para evitar erro no Firebase
-    const cleanTransaction = Object.fromEntries(
-      Object.entries(transaction).filter(([_, value]) => value !== undefined)
-    );
-    
-    // Converter a data para Timestamp para evitar problemas de fuso horário
-    const transactionData = {
-      ...cleanTransaction,
-      date: Timestamp.fromDate(transaction.date),
-      createdAt: Timestamp.fromDate(now),
-      updatedAt: Timestamp.fromDate(now),
-    };
-    
-    const docRef = await addDoc(collection(db, COLLECTION_NAME), transactionData);
+    const docRef = await addDoc(collection(db, COLLECTION_NAME), toFirestoreData(transaction, now));
     return docRef.id;
+  },
+
+  // O lote é atômico: nenhuma parcela é criada se uma gravação falhar.
+  async createMany(transactions: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>[]): Promise<string[]> {
+    if (transactions.length === 0 || transactions.length > 500) {
+      throw new Error('Número de parcelas inválido');
+    }
+    const now = new Date();
+    const batch = writeBatch(db);
+    const ids = transactions.map(transaction => {
+      const reference = doc(collection(db, COLLECTION_NAME));
+      batch.set(reference, toFirestoreData(transaction, now));
+      return reference.id;
+    });
+    await batch.commit();
+    return ids;
   },
 
   // Buscar transações por usuário
@@ -199,7 +209,6 @@ export const transactionService = {
     });
   }
 };
-
 
 
 

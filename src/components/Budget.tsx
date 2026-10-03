@@ -3,6 +3,8 @@ import { useBudget } from '../hooks/useBudget'
 import { useTransactionsContext } from '../contexts/TransactionsContext'
 import { useCategories } from '../hooks/useCategories'
 import { useAuth } from '../contexts/AuthContext'
+import { sumAmounts } from '../utils/money'
+import { formatLocalDate, parseLocalDate } from '../utils/dates'
 
 interface BudgetProps {
   selectedPeriod?: string
@@ -49,20 +51,20 @@ const Budget: React.FC<BudgetProps> = ({
       case 'este-mes':
         const firstDay = new Date(currentYear, currentMonthIndex, 1)
         const lastDay = new Date(currentYear, currentMonthIndex + 1, 0)
-        setStartDate(firstDay.toISOString().split('T')[0])
-        setEndDate(lastDay.toISOString().split('T')[0])
+        setStartDate(formatLocalDate(firstDay))
+        setEndDate(formatLocalDate(lastDay))
         break
       case 'mes-passado':
         const firstDayLastMonth = new Date(currentYear, currentMonthIndex - 1, 1)
         const lastDayLastMonth = new Date(currentYear, currentMonthIndex, 0)
-        setStartDate(firstDayLastMonth.toISOString().split('T')[0])
-        setEndDate(lastDayLastMonth.toISOString().split('T')[0])
+        setStartDate(formatLocalDate(firstDayLastMonth))
+        setEndDate(formatLocalDate(lastDayLastMonth))
         break
       case 'ultimos-3-meses':
         const threeMonthsAgo = new Date(currentYear, currentMonthIndex - 3, 1)
         const lastDayCurrentMonth = new Date(currentYear, currentMonthIndex + 1, 0)
-        setStartDate(threeMonthsAgo.toISOString().split('T')[0])
-        setEndDate(lastDayCurrentMonth.toISOString().split('T')[0])
+        setStartDate(formatLocalDate(threeMonthsAgo))
+        setEndDate(formatLocalDate(lastDayCurrentMonth))
         break
       default:
         // Personalizado - manter as datas atuais
@@ -70,32 +72,6 @@ const Budget: React.FC<BudgetProps> = ({
     }
   }
 
-
-  if (loading) {
-    return (
-      <div className="bg-white p-6 rounded-lg shadow border">
-        <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-4 bg-gray-200 rounded"></div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="bg-white p-6 rounded-lg shadow border">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Orçamento</h3>
-        <div className="text-red-600">
-          <p>Erro ao carregar dados do orçamento: {error}</p>
-        </div>
-      </div>
-    )
-  }
 
   // Calcular dados reais das transações
   const currentMonthIndex = new Date().getMonth()
@@ -116,8 +92,8 @@ const Budget: React.FC<BudgetProps> = ({
     
     // Se estiver no modo personalizado e tiver datas definidas, usar essas datas
     if (periodFilter === 'personalizado' && startDate && endDate) {
-      const start = new Date(startDate)
-      const end = new Date(endDate)
+      const start = parseLocalDate(startDate)
+      const end = parseLocalDate(endDate)
       start.setHours(0, 0, 0, 0)
       end.setHours(23, 59, 59, 999)
       
@@ -162,22 +138,22 @@ const Budget: React.FC<BudgetProps> = ({
         const firstDay = new Date(currentYear, currentMonth, 1)
         const lastDay = new Date(currentYear, currentMonth + 1, 0)
         return {
-          start: firstDay.toISOString().split('T')[0],
-          end: lastDay.toISOString().split('T')[0]
+          start: formatLocalDate(firstDay),
+          end: formatLocalDate(lastDay)
         }
       case 'mes-passado':
         const firstDayLastMonth = new Date(currentYear, currentMonth - 1, 1)
         const lastDayLastMonth = new Date(currentYear, currentMonth, 0)
         return {
-          start: firstDayLastMonth.toISOString().split('T')[0],
-          end: lastDayLastMonth.toISOString().split('T')[0]
+          start: formatLocalDate(firstDayLastMonth),
+          end: formatLocalDate(lastDayLastMonth)
         }
       case 'ultimos-3-meses':
         const threeMonthsAgo = new Date(currentYear, currentMonth - 2, 1)
         const lastDayCurrentMonth = new Date(currentYear, currentMonth + 1, 0)
         return {
-          start: threeMonthsAgo.toISOString().split('T')[0],
-          end: lastDayCurrentMonth.toISOString().split('T')[0]
+          start: formatLocalDate(threeMonthsAgo),
+          end: formatLocalDate(lastDayCurrentMonth)
         }
       default:
         return { start: '', end: '' }
@@ -221,7 +197,7 @@ const Budget: React.FC<BudgetProps> = ({
       // Filtrar parcelas que estão no período selecionado
       const transactionsInPeriod = groupTransactions.filter(transaction => {
         if (effectiveStartDate && effectiveEndDate) {
-          const transactionDate = transaction.date.toISOString().split('T')[0]
+          const transactionDate = formatLocalDate(transaction.date)
           const isInPeriod = transactionDate >= effectiveStartDate && transactionDate <= effectiveEndDate
           
           // console.log('📅 [Budget] Verificando parcela:', {
@@ -241,12 +217,12 @@ const Budget: React.FC<BudgetProps> = ({
       let finalTransactionsInPeriod = transactionsInPeriod
       if (transactionsInPeriod.length === 0) {
         const hasFutureParcels = groupTransactions.some(transaction => {
-          const transactionDate = transaction.date.toISOString().split('T')[0]
+          const transactionDate = formatLocalDate(transaction.date)
           return transactionDate > effectiveEndDate
         })
         
         const hasPastParcels = groupTransactions.some(transaction => {
-          const transactionDate = transaction.date.toISOString().split('T')[0]
+          const transactionDate = formatLocalDate(transaction.date)
           return transactionDate < effectiveStartDate
         })
         
@@ -414,15 +390,15 @@ const Budget: React.FC<BudgetProps> = ({
   }).sort((a, b) => b.actual - a.actual) // Ordenar por valor
 
   // Calcular totais
-  const totalRevenue = filteredTransactions
+  const totalRevenue = sumAmounts(filteredTransactions
     .filter(t => t.type === 'receita')
-    .reduce((sum, t) => sum + t.amount, 0)
+    .map(t => t.amount))
   
-  const totalExpense = filteredTransactions
+  const totalExpense = sumAmounts(filteredTransactions
     .filter(t => t.type === 'despesa')
-    .reduce((sum, t) => sum + t.amount, 0)
+    .map(t => t.amount))
   
-  const available = totalRevenue - totalExpense
+  const available = sumAmounts([totalRevenue, -totalExpense])
   const progress = totalRevenue > 0 ? (totalExpense / totalRevenue) * 100 : 0
 
   // Filtrar dados baseado na aba ativa e filtros do modal
@@ -442,8 +418,8 @@ const Budget: React.FC<BudgetProps> = ({
   // Filtro por período (só aplica se não for 'personalizado' ou se tiver datas definidas)
   if (periodFilter !== 'personalizado' || (startDate && endDate)) {
     const itemDate = new Date(item.date)
-    const start = new Date(startDate)
-    const end = new Date(endDate)
+    const start = parseLocalDate(startDate)
+    const end = parseLocalDate(endDate)
     
     // Ajustar para incluir o dia inteiro
     start.setHours(0, 0, 0, 0)
@@ -494,6 +470,32 @@ const Budget: React.FC<BudgetProps> = ({
   //     isInstallment: item.isInstallment
   //   }))
   // })
+
+  if (loading) {
+    return (
+      <div className="bg-white p-6 rounded-lg shadow border">
+        <div className="animate-pulse">
+          <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-4 bg-gray-200 rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white p-6 rounded-lg shadow border">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Orçamento</h3>
+        <div className="text-red-600">
+          <p>Erro ao carregar dados do orçamento: {error}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-white p-6 rounded-lg shadow border">
@@ -800,5 +802,3 @@ const Budget: React.FC<BudgetProps> = ({
 }
 
 export default Budget
-
-

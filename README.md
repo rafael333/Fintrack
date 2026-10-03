@@ -33,12 +33,17 @@ cp .env.example .env.local
 
 # Execute o projeto
 npm run dev
+
+# Verifique os cálculos e o código antes de publicar
+npm test
+npm run lint
+npm run build
 ```
 
 ## 🔧 Configuração
 
 1. Configure suas credenciais do Firebase no arquivo `.env.local`
-2. Configure as regras do Firestore
+2. Publique `firestore.rules` no Firebase antes de usar dados reais; as regras locais não são aplicadas automaticamente pelo Netlify
 3. Execute o projeto com `npm run dev`
 
 ## 📱 Interface

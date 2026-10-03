@@ -3,6 +3,7 @@ import { scaleBand, scaleLinear, max, min, line as d3_line, curveMonotoneX } fro
 import { useTransactionsContext } from '../contexts/TransactionsContext';
 
 import { Transaction } from '../firebase/types';
+import { sumAmounts } from '../utils/money';
 
 interface ChartData {
   key: string;
@@ -512,7 +513,7 @@ const processTransactionsData = (transactions: Transaction[], selectedYear: numb
   return months.map((month, monthIndex) => {
     // Criar range do mês
     const monthStart = new Date(month.year, month.monthIndex, 1);
-    const monthEnd = new Date(month.year, month.monthIndex + 1, 0, 23, 59, 59);
+    const monthEnd = new Date(month.year, month.monthIndex + 1, 1);
 
     // Verificar se as datas são válidas
     if (isNaN(monthStart.getTime()) || isNaN(monthEnd.getTime())) {
@@ -542,7 +543,7 @@ const processTransactionsData = (transactions: Transaction[], selectedYear: numb
           return false;
         }
         
-        const isInMonth = transactionDate >= monthStart && transactionDate <= monthEnd;
+        const isInMonth = transactionDate >= monthStart && transactionDate < monthEnd;
         
         // Incluir todas as transações do mês (pagas e não pagas)
         return isInMonth;
@@ -553,16 +554,16 @@ const processTransactionsData = (transactions: Transaction[], selectedYear: numb
     });
 
     // Calcular totais do mês (todas as transações - pagas e não pagas)
-    const receitas = monthTransactions
+    const receitas = sumAmounts(monthTransactions
       .filter(t => t.type === 'receita')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .map(t => t.amount));
     
-    const despesas = monthTransactions
+    const despesas = sumAmounts(monthTransactions
       .filter(t => t.type === 'despesa')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .map(t => t.amount));
     
     // Calcular saldo individual do mês
-    const saldoMes = receitas - despesas;
+    const saldoMes = sumAmounts([receitas, -despesas]);
 
     return {
       key: month.name,
@@ -594,10 +595,10 @@ const FinancialEvolution = ({ selectedMonth, selectedYear }: FinancialEvolutionP
   
   // Estado para controlar tooltip no mobile
   const [showMobileTooltip, setShowMobileTooltip] = useState(false);
+  const { transactions, loading, error } = useTransactionsContext();
 
 
   try {
-    const { transactions, loading, error } = useTransactionsContext();
     
     
     // Loading state
@@ -843,4 +844,3 @@ const FinancialEvolution = ({ selectedMonth, selectedYear }: FinancialEvolutionP
 };
 
 export default FinancialEvolution;
-
